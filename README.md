@@ -458,7 +458,7 @@ void setup() {
 | **Android** | Auto | Vendor quirks vary; Just Works works on most devices |
 | **macOS** | Auto or passkey | May be asked to "Setup Keyboard", but canceling out of this setup appears to be harmless and tests still passed |
 | **Windows 10/11** | Auto or passkey | Caches HID descriptor — fully unpair before flashing a new descriptor during development |
-| **Linux (BlueZ)** | Auto or passkey | Passkey screen does not display when connecting via GUI, but does pair/trust/connect successfully. When connecting with bluetoothctl in the CLI, Passkey entry prompts appear and normal Passkey pairing works. |
+| **Linux (BlueZ)** | Auto or passkey | &bull;  Passkey screen does not display when connecting via GUI, but does pair/trust/connect successfully. When connecting with bluetoothctl in the CLI, Passkey entry prompts appear and normal Passkey pairing works.<br> &bull;  Initial testing revealed odd modifier key behaviour, the culprit was found to be ibus intercepting modifier keys. You can uninstall ibus with `sudo apt purge ibus` if you don't need it. |
 
 ---
 
