@@ -835,15 +835,13 @@ void HijelHID_BLEKeyboard::_onAuthComplete(bool success) {
 }
 
 void HijelHID_BLEKeyboard::_onConfirmPassKey(uint32_t passkey) {
-    // The display number for Numeric Comparison is delivered here. Print it
-    // to Serial and fire the user callback so it is always visible.
+    // Always fire the user callback if registered — Serial is their business.
+    // If no callback is registered, print via the normal log path so the
+    // number only appears when log level is Normal or Verbose, not Off.
     if (_cbPassKey) {
-        _logNf("Numeric Comparison passkey: %06lu", (unsigned long)passkey);
         _cbPassKey(passkey);
     } else {
-        // No callback registered — always print to Serial regardless of log
-        // level so the number is visible for the user to confirm on the host.
-        Serial.printf("[HijelHID] Passkey: %06lu\n", (unsigned long)passkey);
+        _logNf("Passkey: %06lu", (unsigned long)passkey);
     }
 }
 
