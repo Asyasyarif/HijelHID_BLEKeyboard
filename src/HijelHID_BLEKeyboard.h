@@ -88,7 +88,7 @@
 // ─── Security Modes ────────────────────────────────────────────────────────
 enum class BLEKeyboardSecurity : uint8_t {
     JustWorks = 0,  // Auto-pair with no passcode (default)
-    Passkey,        // Require a 6-digit passkey printed to Serial
+    Passkey,        // Numeric Comparison — 6-digit code shown on host and Serial
 };
 
 // ─── Debug Log Levels ──────────────────────────────────────────────────────
@@ -122,7 +122,6 @@ public:
     void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override;
     void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override;
     void onAuthenticationComplete(NimBLEConnInfo& connInfo) override;
-    uint32_t onPassKeyDisplay() override;
     void onConfirmPassKey(NimBLEConnInfo& connInfo, uint32_t pass_key) override;
 private:
     HijelHID_BLEKeyboard* _parent;
@@ -222,14 +221,16 @@ public:
      * Set the pairing security mode. Must be called before `begin()`.
      *
      * `BLEKeyboardSecurity::JustWorks` — auto-pair, no passcode (default).
-     * `BLEKeyboardSecurity::Passkey` — require a 6-digit passkey printed to Serial.
+     * `BLEKeyboardSecurity::Passkey` — Numeric Comparison pairing. A 6-digit code
+     *   is printed to Serial (and passed to `onPassKey` if registered); the user
+     *   confirms it matches on the host side.
      */
     void setSecurityMode(BLEKeyboardSecurity mode);
 
     /**
-     * Optional callback fired when a passkey is generated (passkey mode only).
-     * `cb` receives the 6-digit passkey as `uint32_t`.
-     * Use this to display the passkey on your own hardware instead of Serial.
+     * Optional callback fired with the 6-digit Numeric Comparison code (passkey mode only).
+     * `cb` receives the code as `uint32_t`. If not registered, the code is always
+     * printed to Serial regardless of debug log level.
      */
     void onPassKey(void (*cb)(uint32_t passkey));
 
@@ -238,6 +239,23 @@ public:
      * `cb` receives `true` on success, `false` on failure.
      */
     void onPairingComplete(void (*cb)(bool success));
+
+    /**
+     * Use a random static BLE address instead of the ESP32's fixed public MAC address.
+     * Must be called before `begin()`.
+     *
+     * When `true`, the device advertises with a randomly generated static address,
+     * causing hosts to treat it as a previously-unseen device. This bypasses stale
+     * bond cache on hosts (particularly Android) that have cached a failed or
+     * incomplete pairing attempt and silently refuse to pair again.
+     *
+     * The address is stable for the lifetime of the BLE stack — it does not rotate
+     * mid-session. It changes after each power cycle, so hosts that bonded
+     * successfully will need to re-pair after a reboot when this mode is enabled.
+     *
+     * Default: `false` (use the ESP32's fixed public MAC address).
+     */
+    void setRandomAddress(bool enable);
 
     // ─── Timing ──────────────────────────────────────────────────────────
 
@@ -379,7 +397,6 @@ public:
     void     _onConnect();
     void     _onDisconnect();
     void     _onAuthComplete(bool success);
-    uint32_t _onPassKeyDisplay();
     void     _onConfirmPassKey(uint32_t passkey);
     void     _onLEDWrite(uint8_t ledByte);
 
@@ -397,6 +414,7 @@ private:
     uint16_t            _tapDelay;
     uint16_t            _keyGap;
     HIDLogLevel         _logLevel;
+    bool                _useRandomAddress;  // if true, use random static address in begin()
 
     // ── Constructor Validation Flags ──────────────────────────────────────
     // Set in the constructor when an argument is out of range. Warnings are

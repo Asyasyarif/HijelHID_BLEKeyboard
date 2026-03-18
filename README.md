@@ -1,6 +1,6 @@
 # <sub><img width="40" height="40" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/keyboard.svg"></sub> HijelHID_BLEKeyboard
 
-A complete Bluetooth Low Energy (BLE) HID keyboard library for ESP32, built on [NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino) 2.x.
+A complete Bluetooth Low Energy (BLE) HID keyboard library for ESP32, built on [NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino).
 
 Turn your ESP32 into a BLE HID Keyboard device.
 
@@ -8,17 +8,17 @@ Supports all keys on a standard 104/105-key keyboard with numpad, consumer/media
 
 Works with iOS, Android, macOS, Windows, and Linux.
 
- **LIMITED** testing completed on:
+ **Testing completed on:**
 
- <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/gray/apple.svg"></sub> iOS 26.3
+ <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/gray/apple.svg"></sub> iOS 26.3 - Fully Tested
 
- <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/green/android2.svg"></sub> Android 11
+ <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/green/android2.svg"></sub> Android 11 - Limited Testing
 
- <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/gray_dark/apple.svg"></sub> macOS Ventura 13.7.8
+ <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/gray_dark/apple.svg"></sub> macOS Ventura 13.7.8 - Fully Tested
  
- <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/windows.svg"></sub> Windows 11 Pro 25H2
+ <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/windows.svg"></sub> Windows 11 Pro 25H2 - Fully Tested
 
-<sub> <img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/orange/ubuntu.svg"></sub> Ubuntu 22.04.5 LTS
+<sub> <img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/orange/ubuntu.svg"></sub> Ubuntu 22.04.5 LTS - Fully Tested
 
 <sub>**Limited testing includes:** Making a secure connection in Just Works (no passkey) security mode and successfully sending a limited number of keys and media keys to the device.</sub>
 
@@ -49,7 +49,11 @@ An ESP32 board/module with BLE [ *All except ESP32-S2 and ESP32-P4* ]
 [![Downloads](https://img.shields.io/github/downloads/HijelHub/HijelHID_BLEKeyboard/latest/total.svg?style=plastic&label=Downloads&color=green)](https://github.com/HijelHub/HijelHID_BLEKeyboard/releases/latest)
 
 
+Arduino Library Manager: `Sketch → Include Library → Manage Libraries` Search for "HijelHID"
 
+--- OR ---
+
+Manual Zip Install:
 1. Download the [Latest ZIP](https://github.com/HijelHub/HijelHID_BLEKeyboard/releases/latest/download/HijelHID_BLEKeyboard.zip) [Direct Download Link]
 2. In Arduino IDE: `Sketch → Include Library → Add .ZIP Library`
 3. Select the downloaded zip
@@ -169,7 +173,7 @@ keyboard.kill();        // permanent shutdown — frees ~38KB of heap
 | `kill()` | Full teardown, frees all BLE memory | No — permanently shut down |
 
 > [!NOTE]
-> A small bounded memory leak (~308 bytes) remains after `kill()` due to an upstream issue in the ESP-IDF NimBLE port. Since `begin()` is refused after `kill()`, this leak cannot compound. For pause/resume scenarios, use `end()` and `begin()` instead.
+> A small bounded memory leak (~308 bytes) remains after `kill()` due to an apperant upstream issue with NimBLE. Since `begin()` is refused after `kill()`, this leak cannot compound. For pause/resume scenarios, use `end()` and `begin()` instead.
 
 
 [[Top]](#api-reference)
@@ -329,7 +333,7 @@ keyboard.setBatteryLevel(85);  // Report 85% battery
 
 ### <a name="security--pairing"></a>Security / Pairing
 
-By default the keyboard pairs automatically with no passkey. To require a 6-digit passkey, call `setSecurityMode()` before `begin()`.
+By default the keyboard pairs automatically with no passkey. To require a passkey challenge, call `setSecurityMode()` before `begin()`.
 
 ```.ino
 void setup() {
@@ -342,7 +346,7 @@ void setup() {
 | Mode | Behaviour |
 |---|---|
 | `BLEKeyboardSecurity::JustWorks` | Auto-pair with no passcode (default) |
-| `BLEKeyboardSecurity::Passkey` | Require a 6-digit passkey printed to Serial |
+| `BLEKeyboardSecurity::Passkey` | Require a numerical comparison passkey printed to Serial |
 
 When passkey mode is active, the passkey is printed to Serial automatically. You can also register callbacks to handle the passkey and pairing result in your own code.
 
@@ -354,7 +358,7 @@ HijelHID_BLEKeyboard keyboard;
 // Called when a passkey needs to be displayed to the user.
 // Show it however makes sense for your project — Serial, display, LEDs, etc.
 void onPassKey(uint32_t passkey) {
-    Serial.print("Enter this passkey on your device: ");
+    Serial.print("Does this passkey match on your device? ");
     Serial.println(passkey);
 }
 
@@ -450,11 +454,11 @@ void setup() {
 
 | Platform | Pairing | Notes |
 |---|---|---|
-| **iOS** | Auto or passkey | PnP ID required; LE Secure Connections enabled by default |
+| **iOS** | Auto or passkey | &bull; When attempting to change the deviceName, new names will only appear:<br> &emsp; 1) AFTER you re-pair the device <br> &emsp; 2) IF the new deviceName is SHORTER than the cached name<br> &emsp; 3) OR the new deviceName is LESS than 20 Characters |
 | **Android** | Auto | Vendor quirks vary; Just Works works on most devices |
 | **macOS** | Auto or passkey | May be asked to "Setup Keyboard", but canceling out of this setup appears to be harmless and tests still passed |
 | **Windows 10/11** | Auto or passkey | Caches HID descriptor — fully unpair before flashing a new descriptor during development |
-| **Linux (BlueZ)** | Auto | May need `bluetoothctl trust <MAC>` after first pairing |
+| **Linux (BlueZ)** | Auto or passkey | Initial testing revealed odd modifier key behaviour, the culprit was found to be ibus intercepting modifier keys. You can uninstall ibus with `sudo apt purge ibus` if you don't need it. |
 
 ---
 
