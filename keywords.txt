@@ -32,6 +32,11 @@ isNumLockOn	KEYWORD2
 isCapsLockOn	KEYWORD2
 isScrollLockOn	KEYWORD2
 onLEDChange	KEYWORD2
+beforeSleep	KEYWORD2
+afterWake	KEYWORD2
+setTxPower	KEYWORD2
+setAfterWakeTimeout	KEYWORD2
+setRandomAddress	KEYWORD2
 
 # ── Debug Levels (LITERAL1) ───────────────────────────────────────────────
 HIDLogLevel_Off	LITERAL1
@@ -49,6 +54,7 @@ BLEKeyboardSecurity_Passkey	LITERAL1
 # ── Timing Defaults (LITERAL1) ────────────────────────────────────────────
 HID_DEFAULT_TAP_DELAY_MS	LITERAL1
 HID_DEFAULT_KEY_GAP_MS	LITERAL1
+HID_AFTER_WAKE_SETTLE_MS	LITERAL1
 
 # ── Modifier Bits (LITERAL1) ──────────────────────────────────────────────
 KEY_MOD_LCTRL	LITERAL1
