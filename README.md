@@ -113,6 +113,7 @@ void loop() {
 * [Timing](#timing)
 * [Battery Level](#battery-level)
 * [Security / Pairing](#security--pairing)
+* [Power Saving](#power-saving)
 * [LED State](#led-state)
 * [Debug Logging](#debug-logging)
 
@@ -120,7 +121,9 @@ void loop() {
 
 ---
 
-### <a name="constructor"></a>Constructor
+<br>
+
+## <a name="constructor"></a>Constructor
 
 Create a keyboard object with an optional custom name, manufacturer, and battery level.
 
@@ -142,7 +145,9 @@ HijelHID_BLEKeyboard keyboard("My Keyboard", "My Company", 100);
 
 ---
 
-### <a name="lifecycle"></a>Lifecycle
+<br>
+
+## <a name="lifecycle"></a>Lifecycle
 
 Call `begin()` once in `setup()` to start BLE advertising. The device will be discoverable and ready to pair.
 
@@ -180,7 +185,9 @@ keyboard.kill();        // permanent shutdown — frees ~38KB of heap
 
 ---
 
-### <a name="connection"></a>Connection
+<br>
+
+## <a name="connection"></a>Connection
 
 Check whether a host is connected before sending keys.
 
@@ -196,7 +203,9 @@ void loop() {
 
 ---
 
-### <a name="typing-text"></a>Typing Text
+<br>
+
+## <a name="typing-text"></a>Typing Text
 
 `print()` and `println()` type a string of characters. Upper case, punctuation, and spaces are handled automatically. `println()` adds a newline at the end.
 
@@ -219,7 +228,9 @@ keyboard.tap(KEY_RETURN);
 
 ---
 
-### <a name="tapping-keys"></a>Tapping Keys
+<br>
+
+## <a name="tapping-keys"></a>Tapping Keys
 
 `tap()` is the simplest way to press and release a single key. Use `KEY_*` constants from `src/BLEHIDKeys.h`.
 
@@ -242,7 +253,9 @@ keyboard.tap(KEY_DELETE, KEY_MOD_LCTRL | KEY_MOD_LALT);  // Ctrl+Alt+Del
 
 ---
 
-### <a name="pressing-keys"></a>Pressing Keys
+<br>
+
+## <a name="pressing-keys"></a>Pressing Keys
 
 Use `press()` and `release()` when you need to hold a key down. You must add `delay()` calls yourself between each step.
 
@@ -274,7 +287,9 @@ keyboard.releaseAll();
 
 ---
 
-### <a name="media--consumer-keys"></a>Media / Consumer Keys
+<br>
+
+## <a name="media--consumer-keys"></a>Media / Consumer Keys
 
 Media keys work with both `tap()` and `press()`. Use `MEDIA_*` constants from `src/BLEHIDMediaKeys.h`.
 
@@ -297,7 +312,9 @@ keyboard.releaseAll();
 
 ---
 
-### <a name="timing"></a>Timing
+<br>
+
+## <a name="timing"></a>Timing
 
 By default, `tap()` holds each key for **25ms** and waits **25ms** after release before the next key. You can adjust these globally, or override them for a single `tap()` call.
 
@@ -313,13 +330,13 @@ keyboard.tap(KEY_A, KEY_MOD_LSHIFT, 60, 40);  // with modifier + custom timing
 keyboard.tap(MEDIA_VOLUME_UP, 60, 40); // media key with custom timing
 ```
 
-> **Note:** iOS requires at least ~15ms for both values to reliably register every keypress. The 25ms defaults cover this.
-
 [[Top]](#api-reference)
 
 ---
 
-### <a name="battery-level"></a>Battery Level
+<br>
+
+## <a name="battery-level"></a>Battery Level
 
 Update the battery percentage shown to the host at any time.
 
@@ -331,7 +348,9 @@ keyboard.setBatteryLevel(85);  // Report 85% battery
 
 ---
 
-### <a name="security--pairing"></a>Security / Pairing
+<br>
+
+## <a name="security--pairing"></a>Security / Pairing
 
 By default the keyboard pairs automatically with no passkey. To require a passkey challenge, call `setSecurityMode()` before `begin()`.
 
@@ -398,7 +417,54 @@ if (keyboard.isBonded()) {
 
 ---
 
-### <a name="led-state"></a>LED State
+<br>
+
+## <a name="power-saving"></a>Power Saving
+
+### TX Power
+
+The BLE radio transmit power can be reduced to save energy when the device is operating at close range. Valid levels are 1–8, 1 being the lowest TX power. Default is set to 8.
+
+```.ino
+keyboard.setTxPower(1);  // -12 dBm, lowest range/setting 
+keyboard.setTxPower(8);  // +9 dBm, maximum range/setting (default)
+```
+
+### Light Sleep
+
+Call `beforeSleep()` immediately before entering light sleep and `afterWake()` immediately after. `afterWake()` blocks until the host has fully reconnected and the HID stack has settled — or until the defualt timout (15000ms) expires.<br>
+If needed, you can change the timeout value by setting `setAfterWakeTimeout()` in your `setup()` function.
+
+```
+keyboard.beforeSleep();
+esp_light_sleep_start();
+keyboard.afterWake();  // blocks until host is ready
+
+keyboard.println("Woke from light sleep!");
+```
+
+### Deep Sleep
+
+No special library calls are needed for deep sleep. However, you should call `beforeSleep()` before sleeping to release any held keys cleanly, then call begin() as normal in setup() on wakeup. The stored bond survives deep sleep and the host will reconnect automatically.
+
+```
+// Before sleeping:
+keyboard.beforeSleep();
+esp_deep_sleep_start();
+
+// On wakeup, setup() runs as normal:
+void setup() {
+    keyboard.begin();  // reconnects via stored bond automatically
+}
+```
+
+[[Top]](#api-reference)
+
+---
+
+<br>
+
+## <a name="led-state"></a>LED State
 
 The host sends LED state back to the keyboard (Num Lock, Caps Lock, Scroll Lock). You can read the current state or set a callback to react to changes.
 
@@ -428,7 +494,9 @@ keyboard.onLEDChange([](uint8_t leds) {
 
 ---
 
-### <a name="debug-logging"></a>Debug Logging
+<br>
+
+## <a name="debug-logging"></a>Debug Logging
 
 Enable Serial logging to help with troubleshooting. Call before `begin()`.
 
@@ -450,11 +518,13 @@ void setup() {
 
 ---
 
+---
+
 ## <sub><img width="30" height="30" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/card-list.svg"></sub> Platform Notes
 
 | Platform | Pairing | Notes |
 |---|---|---|
-| **iOS** | Auto or passkey | &bull; When attempting to change the deviceName, new names will only appear:<br> &emsp; 1) AFTER you re-pair the device <br> &emsp; 2) IF the new deviceName is SHORTER than the cached name<br> &emsp; 3) OR the new deviceName is LESS than 20 Characters |
+| **iOS** | Auto or passkey | When attempting to change the deviceName, new names will only appear:<br> &emsp; 1) AFTER you re-pair the device <br> &emsp; 2) IF the new deviceName is SHORTER than the cached name<br> &emsp; 3) OR the new deviceName is LESS than 20 Characters |
 | **Android** | Auto | Vendor quirks vary; Just Works works on most devices |
 | **macOS** | Auto or passkey | May be asked to "Setup Keyboard", but canceling out of this setup appears to be harmless and tests still passed |
 | **Windows 10/11** | Auto or passkey | Caches HID descriptor — fully unpair before flashing a new descriptor during development |
