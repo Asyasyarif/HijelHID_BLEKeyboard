@@ -2,7 +2,7 @@
 
 A complete Bluetooth Low Energy (BLE) HID keyboard library for ESP32, built on [NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino).
 
-Turn your ESP32 into a BLE HID Keyboard device.
+Turn your ESP32 into a BLE HID Keyboard device. Great for creating a physical device, or just emulating one.
 
 Supports all keys on a standard 104/105-key keyboard with numpad, consumer/media keys, and international/language keys. Keyboard and media keys share a single unified API — `press()`, `release()`, `releaseAll()`, and `tap()` handle both automatically.
 
