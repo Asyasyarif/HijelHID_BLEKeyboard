@@ -101,7 +101,7 @@ void loop() {
 ## <a name="api-reference"></a><sub><img width="30" height="30" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/blue/code.svg"></sub> API Reference
 
 <details>
-<summary>API INDEX</summary>
+<summary> CLICK FOR API INDEX </summary>
 
 * [Constructor](#constructor)
 * [Lifecycle](#lifecycle)
