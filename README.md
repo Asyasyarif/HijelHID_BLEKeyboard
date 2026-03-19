@@ -432,7 +432,7 @@ keyboard.setTxPower(8);  // +9 dBm, maximum range/setting (default)
 
 ### Light Sleep
 
-Call `beforeSleep()` immediately before entering light sleep and `afterWake()` immediately after. `afterWake()` blocks until the host has fully reconnected and the HID stack has settled — or until the defualt timout (15000ms) expires.<br>
+Call `beforeSleep()` immediately before entering light sleep and `afterWake()` immediately after. `afterWake()` blocks until the host has fully reconnected and the HID stack has settled — or until the default timout (15000ms) expires.<br>
 If needed, you can change the timeout value by setting `setAfterWakeTimeout()` in your `setup()` function.
 
 ```
