@@ -70,8 +70,9 @@
 // to reliably register every keypress, including repeated identical keys.
 // Adjust globally with setTapDelay() / setKeyGap(), or override per-call
 // using the delayMs and keyGap parameters on tap().
-#define HID_DEFAULT_TAP_DELAY_MS  25
-#define HID_DEFAULT_KEY_GAP_MS    25
+#define HID_DEFAULT_TAP_DELAY_MS    25
+#define HID_DEFAULT_KEY_GAP_MS      25
+#define HID_AFTER_WAKE_SETTLE_MS  1500  // settle delay inside afterWake() after reconnection
 
 // ─── String Length Limits ──────────────────────────────────────────────────
 // Device name: BLE scan response packet is 31 bytes; 2 bytes are consumed by
@@ -206,7 +207,10 @@ public:
 
     // ─── Connection State ────────────────────────────────────────────────
 
-    /** Returns `true` if a host is currently connected. */
+    /** Returns `true` if a host is currently connected at the GAP layer.
+     *  Note: a GAP connection exists briefly before authentication completes —
+     *  use `afterWake()` after light sleep rather than polling `isConnected()`
+     *  directly, to ensure the host is fully ready before sending reports. */
     bool isConnected() const;
 
     /** Returns `true` if at least one bond is stored in NVS. */
@@ -280,6 +284,27 @@ public:
      * Valid range is 1–100; values outside this range are clamped with a warning.
      */
     void setBatteryLevel(uint8_t level);
+
+    /**
+     * Set the BLE radio transmit power.
+     * Valid range is 1–8, mapping onto the ESP32's 8 discrete power steps:
+     *
+     *   1 = -12 dBm  (lowest — centimetre range, maximum power saving)
+     *   2 =  -9 dBm
+     *   3 =  -6 dBm
+     *   4 =  -3 dBm
+     *   5 =   0 dBm
+     *   6 =  +3 dBm
+     *   7 =  +6 dBm
+     *   8 =  +9 dBm  (highest — maximum range, default)
+     *
+     * Values outside 1–8 are clamped with a warning. To stop the radio
+     * entirely use `end()` rather than setting power to 0.
+     *
+     * Can be called before or after `begin()`. The value is re-applied
+     * automatically on every `begin()` / `end()` + `begin()` cycle.
+     */
+    void setTxPower(uint8_t level);
 
     // ─── Key Input (keyboard and consumer/media) ─────────────────────────
     //
@@ -393,6 +418,52 @@ public:
      */
     void onLEDChange(void (*cb)(uint8_t leds));
 
+    // ─── Sleep Hooks ─────────────────────────────────────────────────────
+
+    /**
+     * Call immediately before entering light sleep (`esp_light_sleep_start()`).
+     *
+     * Releases all held keys so the host does not see keys stuck down across
+     * the sleep boundary, and sets the internal priming flag so the first
+     * report after wakeup correctly primes the Windows HID resume handshake.
+     *
+     * Safe to call even if not connected — `releaseAll()` is a no-op when
+     * there is no active connection.
+     *
+     * Not required before deep sleep — deep sleep is a full chip reset and
+     * `begin()` in `setup()` handles all necessary initialisation on wakeup.
+     */
+    void beforeSleep();
+
+    /**
+     * Call immediately after returning from light sleep.
+     *
+     * Handles the full post-wakeup reconnection sequence within a single
+     * shared timeout budget (`setAfterWakeTimeout()`):
+     *
+     * 1. Waits for any stale authenticated connection to drop — a fast bonded
+     *    reconnect can fire before the old supervision timeout is processed,
+     *    causing reports to be sent into a connection that is about to be torn down.
+     * 2. Waits for the host to reconnect and complete LTK re-encryption.
+     * 3. Settles briefly (`HID_AFTER_WAKE_SETTLE_MS`) to allow the host to
+     *    finish HID descriptor negotiation before the first report is sent.
+     *
+     * The total time spent in `afterWake()` never exceeds the value set by
+     * `setAfterWakeTimeout()` (default 15000ms).
+     * If any step times out, `afterWake()` returns without sending any reports.
+     * Check `isConnected()` after `afterWake()` returns to confirm success.
+     *
+     * Not required after deep sleep — `begin()` in `setup()` handles everything.
+     */
+    void afterWake();
+
+    /**
+     * Set the total time budget for `afterWake()` in milliseconds (default 15000ms).
+     * This is shared across all internal wait steps — the total time spent in
+     * `afterWake()` will never exceed this value. Must be greater than 0.
+     */
+    void setAfterWakeTimeout(uint32_t ms) { _afterWakeTimeoutMs = ms; }
+
     // ─── Internal Callbacks (do not call directly) ────────────────────────
     void     _onConnect();
     void     _onDisconnect();
@@ -426,11 +497,21 @@ private:
     // ── Runtime State ─────────────────────────────────────────────────────
     _BLEState _state;             // lifecycle: Stopped → Running → Stopped (or Killed)
     volatile bool _connected;     // true while a host is connected (set from NimBLE task)
+    volatile bool _authenticated; // true after onAuthenticationComplete(success=true)
+                                  // cleared on disconnect. Used by afterWake() as a
+                                  // reliable "host is fully ready" signal.
     volatile uint8_t _ledState;   // LED bitmask from host (written from NimBLE task)
     uint8_t  _keyReport[HID_KEYBOARD_REPORT_SIZE];  // [mod][0x00][k0..k5]
-    bool     _consumerActive;  // true while a consumer/media key is held down
-    uint32_t _lastReportMs;   // millis() of last successful notify — used to detect host-side
-                              // selective suspend (Windows drops first packet after ~2s idle)
+    bool     _consumerActive;      // true while a consumer/media key is held down
+    bool     _reportPrimingNeeded; // true when the next report must be preceded by a
+                                   // zero-report to wake the host (Windows HID resume
+                                   // handshake). Set on construction, disconnect, end(),
+                                   // and beforeSleep(). Replaces the previous millis()-
+                                   // based idle check which stopped incrementing during
+                                   // ESP32 light sleep.
+    uint8_t  _txPowerLevel;        // current TX power level (1–8). Stored so begin() can
+                                   // re-apply it on every end()/begin() restart cycle.
+    uint32_t _afterWakeTimeoutMs;  // total time budget for afterWake() across all wait steps
 
     // ── User Callbacks ────────────────────────────────────────────────────
     void (*_cbPassKey)(uint32_t);

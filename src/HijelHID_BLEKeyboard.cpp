@@ -243,9 +243,12 @@ HijelHID_BLEKeyboard::HijelHID_BLEKeyboard(const char* deviceName,
       _useRandomAddress(false),
       _state(_BLEState::Stopped),
       _connected(false),
+      _authenticated(false),
       _ledState(0),
       _consumerActive(false),
-      _lastReportMs(0),
+      _reportPrimingNeeded(true),
+      _txPowerLevel(8),
+      _afterWakeTimeoutMs(15000),
       _nameTruncated(false),
       _mfrTruncated(false),
       _batClamped(false),
@@ -374,6 +377,8 @@ void HijelHID_BLEKeyboard::begin() {
             NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_RANDOM);
             _logN("Using random static BLE address.");
         }
+        // Re-apply TX power — not persisted across end()/begin() cycles.
+        setTxPower(_txPowerLevel);
         NimBLEDevice::startAdvertising();
         _state = _BLEState::Running;
         _logNf("Advertising as \"%s\". Tap delay: %dms, key gap: %dms.",
@@ -404,6 +409,9 @@ void HijelHID_BLEKeyboard::begin() {
         NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_RANDOM);
         _logN("Using random static BLE address.");
     }
+
+    // Apply TX power — must be set after init().
+    setTxPower(_txPowerLevel);
 
     // Configure security
     if (_secMode == BLEKeyboardSecurity::Passkey) {
@@ -513,10 +521,11 @@ void HijelHID_BLEKeyboard::end() {
 
     // Reset internal state
     _connected = false;
+    _authenticated = false;
     memset(_keyReport, 0, sizeof(_keyReport));
     _ledState = 0;
     _consumerActive = false;
-    _lastReportMs = 0;
+    _reportPrimingNeeded = true;
 
     _logN("Stopped. Call begin() to restart.");
 }
@@ -647,6 +656,44 @@ void HijelHID_BLEKeyboard::setBatteryLevel(uint8_t level) {
         // immediately after the battery notify can lose the ACL buffer race.
         if (_connected) delay(30);
         _logNf("Battery level set to %d%%.", level);
+    }
+}
+
+// ─── TX Power ─────────────────────────────────────────────────────────────
+
+void HijelHID_BLEKeyboard::setTxPower(uint8_t level) {
+    if (_state == _BLEState::Killed) {
+        _logN("WARNING: setTxPower() called after kill() — ignored.");
+        return;
+    }
+    if (level < 1) {
+        _logN("WARNING: TX power level 0 is invalid (use end() to stop the radio), clamping to 1.");
+        level = 1;
+    } else if (level > 8) {
+        _logNf("WARNING: TX power level %d out of range (1-8), clamping to 8.", level);
+        level = 8;
+    }
+
+    // Map 1–8 onto the 8 discrete ESP32 TX power steps.
+    // Each step is 3 dBm apart, from -12 dBm (level 1) to +9 dBm (level 8).
+    static const esp_power_level_t pwrMap[8] = {
+        ESP_PWR_LVL_N12,  // 1 → -12 dBm
+        ESP_PWR_LVL_N9,   // 2 →  -9 dBm
+        ESP_PWR_LVL_N6,   // 3 →  -6 dBm
+        ESP_PWR_LVL_N3,   // 4 →  -3 dBm
+        ESP_PWR_LVL_N0,   // 5 →   0 dBm
+        ESP_PWR_LVL_P3,   // 6 →  +3 dBm
+        ESP_PWR_LVL_P6,   // 7 →  +6 dBm
+        ESP_PWR_LVL_P9,   // 8 →  +9 dBm (maximum)
+    };
+
+    esp_power_level_t pwrLevel = pwrMap[level - 1];
+    _txPowerLevel = level;  // always save — begin() re-applies after init if not yet running
+    if (NimBLEDevice::isInitialized()) {
+        NimBLEDevice::setPower(pwrLevel);
+        _logNf("TX power set to level %d (%d dBm).", level, ((int)pwrLevel * 3) - 12);
+    } else {
+        _logNf("TX power level %d stored — will be applied in begin().", level);
     }
 }
 
@@ -803,7 +850,78 @@ void HijelHID_BLEKeyboard::onLEDChange(void (*cb)(uint8_t leds)) {
     _cbLEDChange = cb;
 }
 
-// ─── Internal Callback Handlers ───────────────────────────────────────────
+// ─── Sleep Hooks ──────────────────────────────────────────────────────────
+
+void HijelHID_BLEKeyboard::beforeSleep() {
+    // Release all keys so the host does not see keys stuck down across
+    // the sleep boundary. releaseAll() is a no-op if not connected, so
+    // this is safe to call regardless of connection state.
+    releaseAll();
+
+    // Ensure the first report after wakeup sends a priming zero-report.
+    // This is necessary because millis() does not increment during light
+    // sleep — without this flag the priming logic would never trigger
+    // after resume, causing the first real report to be dropped by Windows.
+    _reportPrimingNeeded = true;
+
+    _logN("beforeSleep() — keys released, priming flag set.");
+}
+
+void HijelHID_BLEKeyboard::afterWake() {
+    _logN("afterWake() — waiting for host...");
+
+    if (_afterWakeTimeoutMs == 0) {
+        _logN("afterWake() — timeout is 0, returning immediately.");
+        return;
+    }
+
+    // Use a single shared deadline across all wait steps so the total time
+    // spent in afterWake() never exceeds _afterWakeTimeoutMs regardless of
+    // how long each step takes.
+    uint32_t deadline = millis() + _afterWakeTimeoutMs;
+
+    // Step 1: Wait for _authenticated to go false.
+    // After light sleep, a fast bonded reconnect can fire onConnect() and
+    // onAuthenticationComplete() before the old connection's supervision
+    // timeout has been processed by NimBLE's Core 0 task. If we proceed
+    // while _authenticated is still true from the previous session we risk
+    // sending reports into a connection that is about to be torn down.
+    // We wait here until _authenticated goes false, confirming the old
+    // connection has been cleanly disconnected before we look for a new one.
+    if (_authenticated) {
+        _logN("afterWake() — waiting for disconnect...");
+        while (_authenticated && millis() < deadline) {
+            delay(10);
+        }
+        if (_authenticated) {
+            _logN("afterWake() — timed out waiting for disconnect.");
+            return;
+        }
+    }
+
+    // Step 2: Wait for _authenticated to go true.
+    // _onDisconnect() has cleared _authenticated and restarted advertising.
+    // We now wait for the host to reconnect and complete the LTK
+    // re-encryption handshake, which sets _authenticated = true via
+    // _onAuthComplete(). This is a more reliable "ready" signal than
+    // _connected alone, which fires at the raw GAP layer before the host
+    // HID stack has finished negotiation.
+    _logN("afterWake() — waiting for host to reconnect and authenticate...");
+    while (!_authenticated && millis() < deadline) {
+        delay(100);
+    }
+
+    if (!_authenticated) {
+        _logN("afterWake() — timed out waiting for authentication.");
+        return;
+    }
+
+    // Step 3: Authenticated — settle to allow the host to finish HID
+    // descriptor negotiation before the first report is sent.
+    _logN("afterWake() — authenticated, settling...");
+    delay(HID_AFTER_WAKE_SETTLE_MS);
+    _logN("afterWake() — ready.");
+}
 
 void HijelHID_BLEKeyboard::_onConnect() {
     _connected = true;
@@ -812,10 +930,11 @@ void HijelHID_BLEKeyboard::_onConnect() {
 
 void HijelHID_BLEKeyboard::_onDisconnect() {
     _connected = false;
+    _authenticated = false;
     memset(_keyReport, 0, sizeof(_keyReport));
     _ledState = 0;
     _consumerActive = false;
-    _lastReportMs = 0;  // force wakeup prime on next report after reconnect
+    _reportPrimingNeeded = true;  // prime on next report after reconnect
 
     if (_state == _BLEState::Running) {
         _logN("Host disconnected. Restarting advertising...");
@@ -827,8 +946,10 @@ void HijelHID_BLEKeyboard::_onDisconnect() {
 
 void HijelHID_BLEKeyboard::_onAuthComplete(bool success) {
     if (success) {
+        _authenticated = true;
         _logN("Pairing complete (encrypted).");
     } else {
+        _authenticated = false;
         _logN("Pairing failed.");
     }
     if (_cbPairingComplete) _cbPairingComplete(success);
@@ -866,13 +987,17 @@ void HijelHID_BLEKeyboard::_sendKeyReport() {
     // Windows selectively suspends idle BLE HID devices after ~2 seconds of
     // inactivity. When suspended, the first notify() triggers a USB remote
     // wakeup — but Windows drops that first packet as part of the resume
-    // handshake. The workaround: if we have been idle long enough that the
-    // host may have suspended the device, send one silent all-zeros report
-    // first. That report absorbs the drop, and the real report follows
-    // immediately once the host is awake and listening.
+    // handshake. The workaround: send one silent all-zeros report first to
+    // absorb the drop, then send the real report once the host is awake.
+    //
+    // _reportPrimingNeeded is set on construction, on disconnect, and by
+    // beforeSleep() — this replaces the previous millis()-based idle check
+    // which was unreliable after light sleep (millis() does not increment
+    // while the ESP32 CPU is suspended).
+    //
     // Skip the prime if the real report is already all zeros — no point
     // sending two identical empty reports.
-    if ((millis() - _lastReportMs) > 800) {
+    if (_reportPrimingNeeded) {
         bool reportEmpty = true;
         for (int i = 0; i < HID_KEYBOARD_REPORT_SIZE; i++) {
             if (_keyReport[i] != 0) { reportEmpty = false; break; }
@@ -883,6 +1008,7 @@ void HijelHID_BLEKeyboard::_sendKeyReport() {
             _pKeyboardInput->notify();
             delay(50);  // give the host time to fully resume before the real report
         }
+        _reportPrimingNeeded = false;
     }
 
     _pKeyboardInput->setValue(_keyReport, HID_KEYBOARD_REPORT_SIZE);
@@ -890,7 +1016,6 @@ void HijelHID_BLEKeyboard::_sendKeyReport() {
     while (!_pKeyboardInput->notify() && _connected && retries++ < 20) {
         vTaskDelay(1);
     }
-    _lastReportMs = millis();
 }
 
 void HijelHID_BLEKeyboard::_sendConsumerReport(uint16_t usageId) {
@@ -904,11 +1029,12 @@ void HijelHID_BLEKeyboard::_sendConsumerReport(uint16_t usageId) {
     // Same wakeup-prime workaround as _sendKeyReport() — see comments there.
     // Skip the prime if the real report is already a zero release — no point
     // sending two identical empty reports.
-    if ((millis() - _lastReportMs) > 800 && usageId != 0x0000) {
+    if (_reportPrimingNeeded && usageId != 0x0000) {
         uint8_t empty[HID_CONSUMER_REPORT_SIZE] = {};
         _pConsumerInput->setValue(empty, HID_CONSUMER_REPORT_SIZE);
         _pConsumerInput->notify();
         delay(50);  // give the host time to fully resume before the real report
+        _reportPrimingNeeded = false;
     }
 
     _pConsumerInput->setValue(report, HID_CONSUMER_REPORT_SIZE);
@@ -916,7 +1042,6 @@ void HijelHID_BLEKeyboard::_sendConsumerReport(uint16_t usageId) {
     while (!_pConsumerInput->notify() && _connected && retries++ < 20) {
         vTaskDelay(1);
     }
-    _lastReportMs = millis();
 }
 
 bool HijelHID_BLEKeyboard::_addKeycode(uint8_t keycode) {
