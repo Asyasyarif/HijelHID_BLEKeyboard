@@ -29,7 +29,7 @@
 
 HijelHID_BLEKeyboard keyboard;
 
-const int BUTTON_PIN = 38;
+const int BUTTON_PIN = 0;
 
 void setup() {
     Serial.begin(115200);
@@ -37,7 +37,7 @@ void setup() {
 
     pinMode(BUTTON_PIN, INPUT_PULLUP);
 
-    keyboard.setDebugLevel(HIDLogLevel::Normal);
+    keyboard.setLogLevel(HIDLogLevel::Normal);
 
     keyboard.begin();
 
@@ -45,7 +45,7 @@ void setup() {
 }
 
 void loop() {
-    if (!keyboard.isConnected()) {
+    if (!keyboard.isPaired()) {
         static unsigned long lastPrint = 0;
         if (millis() - lastPrint > 3000) {
             Serial.println("Waiting for connection...");
