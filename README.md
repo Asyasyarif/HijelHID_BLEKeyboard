@@ -12,7 +12,7 @@ Works with iOS, Android, macOS, Windows, and Linux.
 
  <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/gray/apple.svg"></sub> iOS 26.3 - Fully Tested
 
- <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/green/android2.svg"></sub> Android 11 - Limited Testing
+ <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/green/android2.svg"></sub> Android 16 - Fully Tested <img src="https://img.shields.io/badge/NEW_FOR-0.5.0-orange">
 
  <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/gray_dark/apple.svg"></sub> macOS Ventura 13.7.8 - Fully Tested
  
@@ -20,7 +20,6 @@ Works with iOS, Android, macOS, Windows, and Linux.
 
 <sub> <img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/orange/ubuntu.svg"></sub> Ubuntu 22.04.5 LTS - Fully Tested
 
-<sub>**Limited testing includes:** Making a secure connection in Just Works (no passkey) security mode and successfully sending a limited number of keys and media keys to the device.</sub>
 
 ---
 
@@ -30,7 +29,7 @@ Works with iOS, Android, macOS, Windows, and Linux.
 | Requirement | Version | Tested On |
 |---|---|---|
 | [ESP32 Arduino Core](https://github.com/espressif/arduino-esp32) | 3.x.x | 3.3.7 |
-| [NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino) | >= 2.3.8 [Minimum Required] | 2.3.8 |
+| [NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino) | >= 2.3.8 [Minimum Required] | 2.5.0 |
 | Arduino IDE | NA | 2.3.8 |
 
 Install **[NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino)** via Arduino IDE: `Tools → Manage Libraries → search "NimBLE-Arduino"`
@@ -46,7 +45,7 @@ An ESP32 board/module with BLE [ *All except ESP32-S2 and ESP32-P4* ]
 
 [![Latest Release](https://img.shields.io/github/release/HijelHub/HijelHID_BLEKeyboard.svg?style=plastic&label=Latest%20Release&color=blue)](https://github.com/HijelHub/HijelHID_BLEKeyboard/releases/latest)
 [![Release Date](https://img.shields.io/github/release-date/HijelHub/HijelHID_BLEKeyboard.svg?style=plastic&label=Release%20Date&color=brightgreen)](https://github.com/HijelHub/HijelHID_BLEKeyboard/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/HijelHub/HijelHID_BLEKeyboard/latest/total.svg?style=plastic&label=Downloads&color=green)](https://github.com/HijelHub/HijelHID_BLEKeyboard/releases/latest)
+<!-- [![Downloads](https://img.shields.io/github/downloads/HijelHub/HijelHID_BLEKeyboard/latest/total.svg?style=plastic&label=Downloads&color=green)](https://github.com/HijelHub/HijelHID_BLEKeyboard/releases/latest) -->
 
 
 Arduino Library Manager: `Sketch → Include Library → Manage Libraries` Search for "HijelHID"
