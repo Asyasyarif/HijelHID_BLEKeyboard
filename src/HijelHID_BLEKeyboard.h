@@ -2,7 +2,7 @@
 /**
  * HijelHID_BLEKeyboard.h
  *
- * BLE HID keyboard library for ESP32, built on NimBLE-Arduino 2.x.
+ * BLE HID keyboard library for ESP32, built on NimBLE-Arduino 2.3.8+
  *
  * Supports all keys on a standard 104/105-key keyboard with numpad,
  * consumer/media keys, international and language keys.
@@ -37,6 +37,8 @@
 #include <NimBLEServer.h>
 #include <NimBLEHIDDevice.h>
 #include <NimBLECharacteristic.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/timers.h>
 #include <string>
 #include "BLEHIDKeys.h"
 #include "BLEHIDMediaKeys.h"
@@ -72,7 +74,31 @@
 // using the delayMs and keyGap parameters on tap().
 #define HID_DEFAULT_TAP_DELAY_MS    25
 #define HID_DEFAULT_KEY_GAP_MS      25
-#define HID_AFTER_WAKE_SETTLE_MS  1500  // settle delay inside afterWake() after reconnection
+#define HID_AFTER_WAKE_SETTLE_MS   250
+#define HID_WINDOWS_PRIME_MS       800  // zero-report prime threshold (Windows BLE HID resume)
+
+// ─── Peripheral Latency / Idle Power Saving ────────────────────────────────
+// When no key has been pressed for HID_IDLE_THRESHOLD_MS milliseconds, the
+// library requests a connection parameter update with slave latency applied.
+// This allows the BLE radio to skip up to HID_IDLE_LATENCY consecutive
+// connection events, reducing the effective radio duty cycle from ~133/sec
+// to ~1.6/sec during idle — a significant power saving with no impact on
+// typing responsiveness (the first keypress immediately restores full rate).
+//
+// The host is not required to accept connection parameter update requests.
+// iOS, macOS, Windows, and Linux will generally honour them, but the timing
+// and acceptance are host-controlled. Power saving is best-effort.
+//
+// On single-core ESP32 variants (C3, C6, C2, H2), the NimBLE host task and
+// the Arduino loop task share one CPU. The param update is posted to the
+// NimBLE task queue from the Arduino loop task — it takes effect once the
+// NimBLE task gets CPU time, which happens naturally at the next delay()
+// call inside tap(). This means the transition has slightly more latency on
+// single-core boards than on dual-core (ESP32, S3), but is functionally correct.
+#define HID_IDLE_THRESHOLD_MS   5000   // inactivity before requesting idle params
+#define HID_IDLE_LATENCY          80   // slave latency events to skip when idle
+#define HID_CONN_INTERVAL          6   // shared connection interval: 6 × 1.25ms = 7.5ms (Active and Idle states both use this interval; slave latency is what differs)
+#define HID_CONN_TIMEOUT         300   // supervision timeout: 300 × 10ms = 3000ms
 
 // ─── String Length Limits ──────────────────────────────────────────────────
 // Device name: BLE scan response packet is 31 bytes; 2 bytes are consumed by
@@ -92,8 +118,12 @@ enum class BLEKeyboardSecurity : uint8_t {
     Passkey,        // Numeric Comparison — 6-digit code shown on host and Serial
 };
 
+// Alias — use HIDSecurity for consistency with BLEMouse library.
+// BLEKeyboardSecurity remains valid for existing sketches.
+using HIDSecurity = BLEKeyboardSecurity;
+
 // ─── Debug Log Levels ──────────────────────────────────────────────────────
-// Pass one of these to setDebugLevel() before calling begin().
+// Pass one of these to setLogLevel() / setDebugLevel() before calling begin().
 //
 // HIDLogLevel::Off     — no Serial output from the library (default)
 // HIDLogLevel::Normal  — connection, pairing, and advertising events
@@ -104,22 +134,17 @@ enum class HIDLogLevel : uint8_t {
     Verbose = 2,
 };
 
-// ─── BLE Lifecycle State ──────────────────────────────────────────────────
-// Used internally to track the BLE stack state across begin()/end()/kill().
-enum class _BLEState : uint8_t {
-    Stopped = 0,  // Not running — begin() will start or restart BLE
-    Running = 1,  // Actively advertising or connected — begin() is a no-op
-    Killed  = 2,  // Permanently shut down via kill() — begin() is refused
-};
-
 // ─── Forward Declaration ───────────────────────────────────────────────────
 class HijelHID_BLEKeyboard;
 
-// ─── Internal: BLE Server + Security Callbacks ────────────────────────────
-// Not part of the public API. Used internally by begin().
-class _HijelKBServerCallbacks : public NimBLEServerCallbacks {
+// ─── Internal Callbacks ───────────────────────────────────────────────────
+// Not part of the public API. Scoped inside HijelHID_Internal to avoid
+// polluting the global namespace. Used internally by begin().
+namespace HijelHID_Internal {
+
+class KBServerCallbacks : public NimBLEServerCallbacks {
 public:
-    _HijelKBServerCallbacks(HijelHID_BLEKeyboard* parent) : _parent(parent) {}
+    KBServerCallbacks(HijelHID_BLEKeyboard* parent) : _parent(parent) {}
     void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override;
     void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override;
     void onAuthenticationComplete(NimBLEConnInfo& connInfo) override;
@@ -128,15 +153,15 @@ private:
     HijelHID_BLEKeyboard* _parent;
 };
 
-// ─── Internal: LED Output Report Callback ─────────────────────────────────
-// Not part of the public API. Receives LED state changes from the host.
-class _HijelKBLEDCallbacks : public NimBLECharacteristicCallbacks {
+class KBLEDCallbacks : public NimBLECharacteristicCallbacks {
 public:
-    _HijelKBLEDCallbacks(HijelHID_BLEKeyboard* parent) : _parent(parent) {}
+    KBLEDCallbacks(HijelHID_BLEKeyboard* parent) : _parent(parent) {}
     void onWrite(NimBLECharacteristic* pChar, NimBLEConnInfo& connInfo) override;
 private:
     HijelHID_BLEKeyboard* _parent;
 };
+
+} // namespace HijelHID_Internal
 
 // ─── HijelHID_BLEKeyboard ─────────────────────────────────────────────────
 class HijelHID_BLEKeyboard : public Print {
@@ -170,8 +195,19 @@ public:
      * `HIDLogLevel::Off` — silent (default).
      * `HIDLogLevel::Normal` — connection, pairing, and advertising events.
      * `HIDLogLevel::Verbose` — all of the above, plus every HID report sent.
+     *
+     * Legacy name — prefer `setLogLevel()` for consistency with the BLEMouse library.
      */
     void setDebugLevel(HIDLogLevel level);
+
+    /**
+     * Set the Serial debug verbosity. Call before `begin()`.
+     *
+     * `HIDLogLevel::Off` — silent (default).
+     * `HIDLogLevel::Normal` — connection, pairing, and advertising events.
+     * `HIDLogLevel::Verbose` — all of the above, plus every HID report sent.
+     */
+    void setLogLevel(HIDLogLevel level) { setDebugLevel(level); }
 
     // ─── Lifecycle ───────────────────────────────────────────────────────
 
@@ -200,8 +236,8 @@ public:
      * Disconnects, stops advertising, tears down the NimBLE stack, and
      * frees all BLE memory. `begin()` cannot be called after `kill()`.
      *
-     * A small per-cycle leak (~48 bytes) exists in the ESP-IDF NimBLE
-     * port and cannot be avoided. For pause/resume use `end()`/`begin()`.
+     * A small leak exists in the ESP-IDF NimBLE port and cannot be avoided.
+     * For pause/resume use `end()`/`begin()`.
      */
     void kill();
 
@@ -209,9 +245,30 @@ public:
 
     /** Returns `true` if a host is currently connected at the GAP layer.
      *  Note: a GAP connection exists briefly before authentication completes —
-     *  use `afterWake()` after light sleep rather than polling `isConnected()`
-     *  directly, to ensure the host is fully ready before sending reports. */
+     *  use `isPaired()` as a more reliable ready-to-send signal, or use
+     *  `afterWake()` after light sleep rather than polling directly. */
     bool isConnected() const;
+
+    /**
+     * Returns `true` if the host is connected and fully authenticated.
+     * More reliable than `isConnected()` as a ready-to-send signal —
+     * `isConnected()` becomes true briefly before the LTK re-encryption
+     * handshake completes on reconnect, while `isPaired()` waits for the
+     * full authentication to finish.
+     */
+    bool isPaired() const;
+
+    /**
+     * Returns the number of milliseconds since the last HID report was sent.
+     * Useful for deciding when to enter light or deep sleep from your sketch.
+     * Reset to zero on the first keypress after wake, and stamped inside
+     * `afterWake()` on reconnection so the value is meaningful immediately
+     * after the wake sequence completes.
+     *
+     * Check `isPaired()` before acting on this value — it returns a large
+     * number before the first report has been sent after boot or deep sleep.
+     */
+    uint32_t getIdleTime() const;
 
     /** Returns `true` if at least one bond is stored in NVS. */
     bool isBonded() const;
@@ -224,17 +281,37 @@ public:
     /**
      * Set the pairing security mode. Must be called before `begin()`.
      *
-     * `BLEKeyboardSecurity::JustWorks` — auto-pair, no passcode (default).
-     * `BLEKeyboardSecurity::Passkey` — Numeric Comparison pairing. A 6-digit code
-     *   is printed to Serial (and passed to `onPassKey` if registered); the user
-     *   confirms it matches on the host side.
+     * `HIDSecurity::JustWorks` — auto-pair, no passcode (default).
+     * `HIDSecurity::Passkey` — Numeric Comparison pairing. A 6-digit code is
+     *   printed to Serial (and passed to `setPasskeyCallback()` if registered);
+     *   the user confirms it matches on the host side.
+     *
+     * NOTE: If `HIDLogLevel::Off` is set and no passkey callback is registered,
+     * the passkey code will not be displayed anywhere. Pairing will still complete,
+     * but MITM protection is effectively equivalent to JustWorks since the user
+     * cannot verify the code. Always register a passkey callback when using
+     * `HIDLogLevel::Off` in Passkey mode.
      */
     void setSecurityMode(BLEKeyboardSecurity mode);
 
     /**
-     * Optional callback fired with the 6-digit Numeric Comparison code (passkey mode only).
-     * `cb` receives the code as `uint32_t`. If not registered, the code is always
-     * printed to Serial regardless of debug log level.
+     * Register a callback for Passkey pairing (optional).
+     * Called with the 6-digit code when a host initiates Passkey pairing.
+     *
+     * If no callback is registered and `HIDLogLevel` is `Off`, the passkey
+     * code will not be displayed — the user will be unable to verify the
+     * matching code on the host side, and MITM protection is not effective.
+     */
+    void setPasskeyCallback(void (*cb)(uint32_t passkey)) { onPassKey(cb); }
+
+    /**
+     * Register a callback for Passkey pairing (optional).
+     * Called with the 6-digit Numeric Comparison code (passkey mode only).
+     * `cb` receives the code as `uint32_t`. If not registered, the code is
+     * printed to Serial only when log level is `Normal` or `Verbose`.
+     *
+     * Legacy name — prefer `setPasskeyCallback()` for consistency with the
+     * BLEMouse library.
      */
     void onPassKey(void (*cb)(uint32_t passkey));
 
@@ -424,8 +501,9 @@ public:
      * Call immediately before entering light sleep (`esp_light_sleep_start()`).
      *
      * Releases all held keys so the host does not see keys stuck down across
-     * the sleep boundary, and sets the internal priming flag so the first
-     * report after wakeup correctly primes the Windows HID resume handshake.
+     * the sleep boundary, sets the internal priming flag so the first report
+     * after wakeup correctly primes the Windows HID resume handshake, stops
+     * the idle timer, and clears any pending idle transition flag.
      *
      * Safe to call even if not connected — `releaseAll()` is a no-op when
      * there is no active connection.
@@ -447,11 +525,13 @@ public:
      * 2. Waits for the host to reconnect and complete LTK re-encryption.
      * 3. Settles briefly (`HID_AFTER_WAKE_SETTLE_MS`) to allow the host to
      *    finish HID descriptor negotiation before the first report is sent.
+     * 4. Restarts the idle timer so the connection transitions correctly to
+     *    Idle if no key is pressed within `HID_IDLE_THRESHOLD_MS`.
      *
      * The total time spent in `afterWake()` never exceeds the value set by
      * `setAfterWakeTimeout()` (default 15000ms).
      * If any step times out, `afterWake()` returns without sending any reports.
-     * Check `isConnected()` after `afterWake()` returns to confirm success.
+     * Check `isPaired()` after `afterWake()` returns to confirm success.
      *
      * Not required after deep sleep — `begin()` in `setup()` handles everything.
      */
@@ -465,13 +545,39 @@ public:
     void setAfterWakeTimeout(uint32_t ms) { _afterWakeTimeoutMs = ms; }
 
     // ─── Internal Callbacks (do not call directly) ────────────────────────
-    void     _onConnect();
-    void     _onDisconnect();
-    void     _onAuthComplete(bool success);
-    void     _onConfirmPassKey(uint32_t passkey);
-    void     _onLEDWrite(uint8_t ledByte);
+    void        _onConnect(uint16_t connHandle);
+    void        _onDisconnect();
+    void        _onAuthComplete(bool success);
+    void        _onConfirmPassKey(uint32_t passkey);
+    void        _onLEDWrite(uint8_t ledByte);
+    static void _idleTimerCallback(TimerHandle_t xTimer);
 
 private:
+    // ── Internal State Enums ──────────────────────────────────────────────
+    // Private nested types — not part of the public API and not visible in
+    // the global namespace.
+    //
+    // _BLEState — tracks the BLE stack lifecycle across begin()/end()/kill().
+    //   Stopped → Running → Stopped (or Killed permanently).
+    //
+    // _ConnState — tracks the active connection's activity state, independent
+    //   of the BLE stack lifecycle. Drives idle power-saving conn param updates.
+    //   Disconnected — no host connected.
+    //   Connecting   — GAP connection established, waiting for authentication.
+    //   Active       — authenticated, full-rate connection params (latency = 0).
+    //   Idle         — no input for HID_IDLE_THRESHOLD_MS, reduced-rate params applied.
+    enum class _BLEState : uint8_t {
+        Stopped = 0,  // Not running — begin() will start or restart BLE
+        Running = 1,  // Actively advertising or connected — begin() is a no-op
+        Killed  = 2,  // Permanently shut down via kill() — begin() is refused
+    };
+    enum class _ConnState : uint8_t {
+        Disconnected = 0,
+        Connecting,
+        Active,
+        Idle,
+    };
+
     // ── Configuration ─────────────────────────────────────────────────────
     // std::string owns its storage — no fixed buffers, no aliasing pointers.
     // Device name is enforced to HID_MAX_DEVICE_NAME_LEN in the constructor
@@ -503,15 +609,39 @@ private:
     volatile uint8_t _ledState;   // LED bitmask from host (written from NimBLE task)
     uint8_t  _keyReport[HID_KEYBOARD_REPORT_SIZE];  // [mod][0x00][k0..k5]
     bool     _consumerActive;      // true while a consumer/media key is held down
-    bool     _reportPrimingNeeded; // true when the next report must be preceded by a
-                                   // zero-report to wake the host (Windows HID resume
-                                   // handshake). Set on construction, disconnect, end(),
-                                   // and beforeSleep(). Replaces the previous millis()-
-                                   // based idle check which stopped incrementing during
-                                   // ESP32 light sleep.
+    volatile bool _reportPrimingNeeded; // true when the next report must be preceded by a
+                                        // zero-report to wake the host (Windows HID resume
+                                        // handshake). Set on construction, disconnect, end(),
+                                        // and beforeSleep(). Also set by the idle timer callback.
+    uint32_t _lastReportMs;             // millis() when the last HID report was sent.
+                                        // Used to detect Windows BLE HID selective suspend —
+                                        // if no report has been sent for HID_WINDOWS_PRIME_MS,
+                                        // a zero-report is sent first to absorb the dropped
+                                        // packet from the Windows resume handshake.
     uint8_t  _txPowerLevel;        // current TX power level (1–8). Stored so begin() can
                                    // re-apply it on every end()/begin() restart cycle.
     uint32_t _afterWakeTimeoutMs;  // total time budget for afterWake() across all wait steps
+
+    // ── Idle Power Management ─────────────────────────────────────────────
+    // _connState    — current activity state of the BLE connection, independent
+    //                 of the BLE stack lifecycle (_BLEState).
+    // _connHandle   — NimBLE connection handle, stored in _onConnect() and used
+    //                 by _updateConnParams(). BLE_HS_CONN_HANDLE_NONE when not
+    //                 connected. volatile because it is written from the NimBLE
+    //                 callback task and read from the Arduino loop task.
+    // _idleTimer    — one-shot FreeRTOS software timer. Created in begin(), started
+    //                 in _onAuthComplete(), reset on every key input event,
+    //                 stopped in _onDisconnect() / end() / beforeSleep().
+    // _pendingIdleTransition — set true by the timer callback (FreeRTOS timer
+    //                 daemon task). Checked and cleared at the top of press() /
+    //                 release() / releaseAll() on the Arduino loop task, which
+    //                 then calls _updateConnParams() safely from that context.
+    //                 This flag-based approach avoids calling NimBLE APIs from
+    //                 the timer daemon task, keeping single-core boards safe.
+    volatile _ConnState _connState;
+    volatile uint16_t   _connHandle;
+    TimerHandle_t     _idleTimer;
+    volatile bool     _pendingIdleTransition;
 
     // ── User Callbacks ────────────────────────────────────────────────────
     void (*_cbPassKey)(uint32_t);
@@ -524,12 +654,17 @@ private:
     NimBLECharacteristic*      _pKeyboardInput;   // Report ID 0x01 Input  (keys → host)
     NimBLECharacteristic*      _pKeyboardOutput;  // Report ID 0x01 Output (LEDs ← host)
     NimBLECharacteristic*      _pConsumerInput;   // Report ID 0x02 Input  (media → host)
-    _HijelKBServerCallbacks*   _pServerCb;        // Owned by us, passed to NimBLE
-    _HijelKBLEDCallbacks*      _pLEDCb;           // Owned by us, passed to NimBLE
+    HijelHID_Internal::KBServerCallbacks*   _pServerCb;  // Owned by us, passed to NimBLE
+    HijelHID_Internal::KBLEDCallbacks*      _pLEDCb;      // Owned by us, passed to NimBLE
 
     // ── Internal Helpers ──────────────────────────────────────────────────
     void    _sendKeyReport();
     void    _sendConsumerReport(uint16_t usageId);
+    void    _updateConnParams(uint16_t minInterval, uint16_t maxInterval,
+                              uint16_t latency, uint16_t timeout);
+    void    _transitionToActive();
+    void    _startIdleTimer();
+    void    _stopIdleTimer();
     bool    _addKeycode(uint8_t keycode);
     bool    _removeKeycode(uint8_t keycode);
     bool    _isModifier(uint8_t keycode);
