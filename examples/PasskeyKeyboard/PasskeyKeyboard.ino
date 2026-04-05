@@ -35,7 +35,7 @@
 #include <HijelHID_BLEKeyboard.h>
 
 
-#define BUTTON_PIN  38   // button — hold to clear bonds | set to your desired GPIO pin
+#define BUTTON_PIN  0   // button — hold to clear bonds | set to your desired GPIO pin
 
 
 #define BOND_CLEAR_HOLD_MS   3000   // Hold BUTTON_PIN this long to clear bonds
@@ -45,7 +45,6 @@
 HijelHID_BLEKeyboard keyboard("Hijel Secure KB", "Hijel", 100);
 
 // Pairing state — set inside callbacks, read in loop()
-volatile bool pairingInProgress = false;
 volatile bool pairingSuccess    = false;
 volatile bool pairingFailed     = false;
 
@@ -60,7 +59,6 @@ volatile bool pairingFailed     = false;
  * print it to Serial.
  */
 void onPassKeyGenerated(uint32_t passkey) {
-    pairingInProgress = true;
 
     Serial.println();
     Serial.println("╔══════════════════════════════╗");
@@ -76,7 +74,6 @@ void onPassKeyGenerated(uint32_t passkey) {
  * success = false → user likely entered the wrong passkey, or timed out.
  */
 void onPairingDone(bool success) {
-    pairingInProgress = false;
 
     if (success) {
         pairingSuccess = true;
@@ -116,7 +113,6 @@ void checkBondClearButton() {
             Serial.println("[Bonds] Clearing all stored bonds...");
             keyboard.clearBonds();
             Serial.println("[Bonds] Done. Re-advertising — pair again with passkey.");
-            pairingInProgress = false;
             pairingSuccess    = false;
             pairingFailed     = false;
         }
@@ -138,11 +134,11 @@ void setup() {
 
     // ── Security configuration ───────────────────────────────────────────
     // Must be called before begin().
-    keyboard.setSecurityMode(BLEKeyboardSecurity::Passkey);
+    keyboard.setSecurityMode(HIDSecurity::Passkey);
 
     // Register the passkey callback — fired when the library generates a
     // 6-digit passkey for the host to compare.
-    keyboard.onPassKey(onPassKeyGenerated);
+    keyboard.setPasskeyCallback(onPassKeyGenerated);
 
     // Register the pairing completion callback — fired when pairing
     // succeeds or fails.
@@ -150,7 +146,7 @@ void setup() {
 
     // Optional: enable Normal logging so connection events print to Serial.
     // Use HID_LOG_VERBOSE to also see every HID report sent.
-    keyboard.setDebugLevel(HIDLogLevel::Normal);
+    keyboard.setLogLevel(HIDLogLevel::Normal);
 
     // ── Start BLE ────────────────────────────────────────────────────────
     keyboard.begin();
@@ -187,14 +183,10 @@ void loop() {
 
     // ── Demo keystrokes ──────────────────────────────────────────────────
     // Only send once connected AND fully authenticated.
-    // isConnected() returns true as soon as the BLE link is up, but on a
-    // passkey-secured device the host may not accept HID reports until
-    // encryption is established. In practice NimBLE 2.x queues reports
-    // correctly, but the !pairingInProgress guard avoids sending during the
-    // passkey entry window when the host UI is occupied.
+    // isPaired() returns true as soon as the BLE link is up, and paired
     static uint32_t lastDemo = 0;
 
-    if (keyboard.isConnected() && !pairingInProgress) {
+    if (keyboard.isPaired()) {
         if (millis() - lastDemo >= DEMO_INTERVAL_MS) {
             lastDemo = millis();
             
