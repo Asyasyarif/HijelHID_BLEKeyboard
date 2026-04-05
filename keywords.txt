@@ -5,6 +5,7 @@
 # ── Datatypes (KEYWORD1) ──────────────────────────────────────────────────
 HijelHID_BLEKeyboard	KEYWORD1
 BLEKeyboardSecurity	KEYWORD1
+HIDSecurity	KEYWORD1
 HIDLogLevel	KEYWORD1
 
 # ── Methods and Functions (KEYWORD2) ─────────────────────────────────────
@@ -12,11 +13,14 @@ begin	KEYWORD2
 end	KEYWORD2
 kill	KEYWORD2
 setDebugLevel	KEYWORD2
+setLogLevel	KEYWORD2
 isConnected	KEYWORD2
 isBonded	KEYWORD2
+isPaired	KEYWORD2
 clearBonds	KEYWORD2
 setSecurityMode	KEYWORD2
 onPassKey	KEYWORD2
+setPasskeyCallback	KEYWORD2
 onPairingComplete	KEYWORD2
 setTapDelay	KEYWORD2
 setKeyGap	KEYWORD2
@@ -36,6 +40,7 @@ beforeSleep	KEYWORD2
 afterWake	KEYWORD2
 setTxPower	KEYWORD2
 setAfterWakeTimeout	KEYWORD2
+getIdleTime	KEYWORD2
 setRandomAddress	KEYWORD2
 
 # ── Debug Levels (LITERAL1) ───────────────────────────────────────────────
@@ -55,6 +60,13 @@ BLEKeyboardSecurity_Passkey	LITERAL1
 HID_DEFAULT_TAP_DELAY_MS	LITERAL1
 HID_DEFAULT_KEY_GAP_MS	LITERAL1
 HID_AFTER_WAKE_SETTLE_MS	LITERAL1
+HID_WINDOWS_PRIME_MS	LITERAL1
+
+# ── Idle Power Saving (LITERAL1) ─────────────────────────────────────────────
+HID_IDLE_THRESHOLD_MS	LITERAL1
+HID_IDLE_LATENCY	LITERAL1
+HID_CONN_INTERVAL	LITERAL1
+HID_CONN_TIMEOUT	LITERAL1
 
 # ── Modifier Bits (LITERAL1) ──────────────────────────────────────────────
 KEY_MOD_LCTRL	LITERAL1
