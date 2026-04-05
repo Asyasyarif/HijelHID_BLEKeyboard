@@ -12,7 +12,7 @@ Works with iOS, Android, macOS, Windows, and Linux.
 
  <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/gray/apple.svg"></sub> iOS 26.3 - Fully Tested
 
- <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/green/android2.svg"></sub> Android 16 - Fully Tested <img src="https://img.shields.io/badge/NEW_FOR-0.5.0-orange">
+ <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/green/android2.svg"></sub> Android 16 - Fully Tested
 
  <sub><img width="20" height="20" src="https://raw.githubusercontent.com/HijelHub/GitStrap_SVG_Icons/b674246b8f46d8bc2c75f3cf5cf395a370b86ae2/icons/gray_dark/apple.svg"></sub> macOS Ventura 13.7.8 - Fully Tested
  
@@ -192,6 +192,8 @@ keyboard.kill();        // permanent shutdown — frees ~38KB of heap
 
 ## <a name="connection"></a>Connection
 
+`isConnected()`
+
 Check whether a host is connected before sending keys.
 
 ```.ino
@@ -203,7 +205,11 @@ void loop() {
 }
 ```
 
-`isPaired()` is a more reliable ready-to-send signal than `isConnected()`. It returns `true` only after the host has fully authenticated — `isConnected()` becomes true briefly before the encryption handshake completes on reconnect, which can cause the first report to be dropped.
+<br>
+
+`isPaired()`
+
+A more reliable ready-to-send signal than `isConnected()`. It returns `true` only after the host has fully authenticated — `isConnected()` becomes true briefly before the encryption handshake completes on reconnect, which can cause the first report to be dropped.
 
 ```.ino
 // Wait until fully ready before sending
@@ -213,7 +219,11 @@ while (!keyboard.isPaired()) {
 keyboard.println("Ready!");
 ```
 
-`getIdleTime()` returns the number of milliseconds since the last HID report was sent. Use it in your sketch to decide when to enter light or deep sleep.
+<br>
+
+`getIdleTime()`
+
+Returns the number of milliseconds since the last HID report was sent. Use it in your sketch to decide when to enter light or deep sleep.
 
 ```.ino
 if (keyboard.isPaired() && keyboard.getIdleTime() > 30000) {
@@ -476,7 +486,7 @@ if (keyboard.isPaired() && keyboard.getIdleTime() > 30000) {
 Call `beforeSleep()` immediately before entering light sleep and `afterWake()` immediately after. `afterWake()` blocks until the host has fully reconnected and the HID stack has settled — or until the default timout (15000ms) expires.<br>
 If needed, you can change the timeout value by setting `setAfterWakeTimeout()` in your `setup()` function.
 
-```
+```.ino
 keyboard.beforeSleep();
 esp_light_sleep_start();
 keyboard.afterWake();  // blocks until host is ready
@@ -488,7 +498,7 @@ keyboard.println("Woke from light sleep!");
 
 No special library calls are needed for deep sleep. However, you should call `beforeSleep()` before sleeping to release any held keys cleanly, then call begin() as normal in setup() on wakeup. The stored bond survives deep sleep and the host will reconnect automatically.
 
-```
+```.ino
 // Before sleeping:
 keyboard.beforeSleep();
 esp_deep_sleep_start();
