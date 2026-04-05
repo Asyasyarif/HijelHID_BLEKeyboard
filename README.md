@@ -113,6 +113,10 @@ void loop() {
 * [Battery Level](#battery-level)
 * [Security / Pairing](#security--pairing)
 * [Power Saving](#power-saving)
+  * [TX Power](#tx-power)
+  * [Idle Radio Power Saving](#idle-radio-power-saving)
+  * [Light Sleep](#light-sleep)
+  * [Deep Sleep](#deep-sleep)
 * [LED State](#led-state)
 * [Debug Logging](#debug-logging)
 
@@ -196,6 +200,26 @@ void loop() {
         keyboard.tap(KEY_A);
         delay(2000);
     }
+}
+```
+
+`isPaired()` is a more reliable ready-to-send signal than `isConnected()`. It returns `true` only after the host has fully authenticated — `isConnected()` becomes true briefly before the encryption handshake completes on reconnect, which can cause the first report to be dropped.
+
+```.ino
+// Wait until fully ready before sending
+while (!keyboard.isPaired()) {
+    delay(10);
+}
+keyboard.println("Ready!");
+```
+
+`getIdleTime()` returns the number of milliseconds since the last HID report was sent. Use it in your sketch to decide when to enter light or deep sleep.
+
+```.ino
+if (keyboard.isPaired() && keyboard.getIdleTime() > 30000) {
+    keyboard.beforeSleep();
+    esp_light_sleep_start();
+    keyboard.afterWake();
 }
 ```
 [[Top]](#api-reference)
@@ -356,15 +380,15 @@ By default the keyboard pairs automatically with no passkey. To require a passke
 ```.ino
 void setup() {
     Serial.begin(115200);
-    keyboard.setSecurityMode(BLEKeyboardSecurity::Passkey);  // Must be before begin()
+    keyboard.setSecurityMode(HIDSecurity::Passkey);  // Must be before begin()
     keyboard.begin();
 }
 ```
 
 | Mode | Behaviour |
 |---|---|
-| `BLEKeyboardSecurity::JustWorks` | Auto-pair with no passcode (default) |
-| `BLEKeyboardSecurity::Passkey` | Require a numerical comparison passkey printed to Serial |
+| `HIDSecurity::JustWorks` | Auto-pair with no passcode (default) |
+| `HIDSecurity::Passkey` | Require a numerical comparison passkey printed to Serial |
 
 When passkey mode is active, the passkey is printed to Serial automatically. You can also register callbacks to handle the passkey and pairing result in your own code.
 
@@ -391,12 +415,15 @@ void onPairingComplete(bool success) {
 
 void setup() {
     Serial.begin(115200);
-    keyboard.setSecurityMode(BLEKeyboardSecurity::Passkey);
-    keyboard.onPassKey(onPassKey);
+    keyboard.setSecurityMode(HIDSecurity::Passkey);
+    keyboard.setPasskeyCallback(onPassKey);
     keyboard.onPairingComplete(onPairingComplete);
     keyboard.begin();
 }
 ```
+
+> [!NOTE]
+> If `HIDLogLevel::Off` is set and no passkey callback is registered, the passkey code will not be displayed anywhere. Always register a passkey callback when using `HIDLogLevel::Off` in Passkey mode.
 
 To forget all previously paired devices and force re-pairing:
 
@@ -427,6 +454,21 @@ The BLE radio transmit power can be reduced to save energy when the device is op
 ```.ino
 keyboard.setTxPower(1);  // -12 dBm, lowest range/setting 
 keyboard.setTxPower(8);  // +9 dBm, maximum range/setting (default)
+```
+
+### Idle Radio Power Saving
+
+The library automatically reduces the BLE radio duty cycle after 5 seconds of inactivity. The radio skips connection events during idle, reducing wake-ups from ~133/sec to ~1.6/sec. Full rate is restored immediately on the next keypress. No user code changes are required.
+
+Use `getIdleTime()` in your sketch to check how long the keyboard has been idle, for example to decide when to enter light or deep sleep.
+
+```.ino
+if (keyboard.isPaired() && keyboard.getIdleTime() > 30000) {
+    // No key sent for 30 seconds — enter light sleep
+    keyboard.beforeSleep();
+    esp_light_sleep_start();
+    keyboard.afterWake();
+}
 ```
 
 ### Light Sleep
@@ -502,7 +544,7 @@ Enable Serial logging to help with troubleshooting. Call before `begin()`.
 ```.ino
 void setup() {
     Serial.begin(115200);
-    keyboard.setDebugLevel(HIDLogLevel::Normal);  // Connection and pairing events
+    keyboard.setLogLevel(HIDLogLevel::Normal);  // Connection and pairing events
     keyboard.begin();
 }
 ```
