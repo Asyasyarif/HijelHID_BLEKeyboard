@@ -42,6 +42,7 @@
 #include <string>
 #include "BLEHIDKeys.h"
 #include "BLEHIDMediaKeys.h"
+#include "HijelHIDCustomService.h"
 
 // ─── Report IDs ────────────────────────────────────────────────────────────
 #define HID_REPORT_ID_KEYBOARD  0x01
@@ -293,6 +294,16 @@ public:
      * `HIDLogLevel::Off` in Passkey mode.
      */
     void setSecurityMode(BLEKeyboardSecurity mode);
+
+    // ─── Custom Service ──────────────────────────────────────────────────
+
+    /**
+     * Access the optional custom GATT service. By default it is disabled and
+     * the library behaves exactly as before (HID + Battery only). Call
+     * `customService().setUUIDs(svc, cmd, sts)` before `begin()` to enable it
+     * with your own 128-bit UUIDs.
+     */
+    HijelHID_CustomService& customService() { return _custom; }
 
     /**
      * Register a callback for Passkey pairing (optional).
@@ -656,6 +667,7 @@ private:
     NimBLECharacteristic*      _pConsumerInput;   // Report ID 0x02 Input  (media → host)
     HijelHID_Internal::KBServerCallbacks*   _pServerCb;  // Owned by us, passed to NimBLE
     HijelHID_Internal::KBLEDCallbacks*      _pLEDCb;      // Owned by us, passed to NimBLE
+    HijelHID_CustomService                  _custom;      // optional custom GATT service
 
     // ── Internal Helpers ──────────────────────────────────────────────────
     void    _sendKeyReport();

@@ -507,6 +507,12 @@ void HijelHID_BLEKeyboard::begin() {
     _logN("Starting HID services...");
     _pHID->startServices();
 
+    // Optional custom service — created only if UUIDs were set via customService().
+    if (_custom.isEnabled()) {
+        _logN("Adding custom service...");
+        _custom.begin(_pServer);
+    }
+
     // Create the idle power management timer. One-shot (not auto-reload).
     // pvTimerGetTimerID returns the 'this' pointer so the static callback
     // can dispatch back to the correct instance without a global variable.
@@ -527,6 +533,7 @@ void HijelHID_BLEKeyboard::begin() {
     pAdv->setAppearance(0x03C1);  // HID Keyboard appearance
     pAdv->addServiceUUID(_pHID->getHidService()->getUUID());
     pAdv->addServiceUUID(_pHID->getBatteryService()->getUUID());
+    if (_custom.isEnabled()) pAdv->addServiceUUID(_custom.serviceUUID().c_str());
     pAdv->setPreferredParams(0x10, 0x20);  // 20ms min, 40ms max (Android 11 compatible)
     pAdv->enableScanResponse(true);
     pAdv->setMinInterval(0x20);
