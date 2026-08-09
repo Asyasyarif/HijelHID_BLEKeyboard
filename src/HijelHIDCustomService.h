@@ -29,10 +29,16 @@ public:
     HijelHID_CustomService() = default;
 
     /**
-     * Enable the custom service with your own UUIDs. Call before begin().
-     * Any null or empty argument disables the service (back to default behaviour).
+     * Enable the custom service with your own service UUID. Call before begin().
+     * Passing nullptr/empty disables the service (back to default behaviour).
      */
-    void setUUIDs(const char* svcUuid, const char* cmdUuid, const char* stsUuid);
+    void setServiceUUID(const char* svcUuid);
+
+    /** Set the command characteristic UUID (write, phone → device). Optional. */
+    void setCommandUUID(const char* cmdUuid);
+
+    /** Set the status characteristic UUID (read/notify, device → phone). Optional. */
+    void setStatusUUID(const char* stsUuid);
 
     /** True when setUUIDs() was called with three valid UUIDs. */
     bool isEnabled() const { return !_svcUuid.empty(); }

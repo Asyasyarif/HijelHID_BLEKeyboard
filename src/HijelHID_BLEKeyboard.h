@@ -300,8 +300,8 @@ public:
     /**
      * Access the optional custom GATT service. By default it is disabled and
      * the library behaves exactly as before (HID + Battery only). Call
-     * `customService().setUUIDs(svc, cmd, sts)` before `begin()` to enable it
-     * with your own 128-bit UUIDs.
+     * `customService().setServiceUUID(...)` (and optionally setCommandUUID /
+     * setStatusUUID) before `begin()` to enable it with your own 128-bit UUIDs.
      */
     HijelHID_CustomService& customService() { return _custom; }
 
