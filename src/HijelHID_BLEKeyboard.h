@@ -305,6 +305,15 @@ public:
      */
     HijelHID_CustomService& customService() { return _custom; }
 
+    /** Shorthand for customService().setServiceUUID(). Call before begin(). */
+    void setCustomServiceUUID(const char* svcUuid) { _custom.setServiceUUID(svcUuid); }
+
+    /** Shorthand for customService().setCommandUUID(). Call before begin(). */
+    void setCustomCommandUUID(const char* cmdUuid) { _custom.setCommandUUID(cmdUuid); }
+
+    /** Shorthand for customService().setStatusUUID(). Call before begin(). */
+    void setCustomStatusUUID(const char* stsUuid) { _custom.setStatusUUID(stsUuid); }
+
     /**
      * Register a callback for Passkey pairing (optional).
      * Called with the 6-digit code when a host initiates Passkey pairing.
