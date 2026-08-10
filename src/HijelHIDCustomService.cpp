@@ -36,13 +36,20 @@ void HijelHID_CustomService::begin(NimBLEServer* server) {
     if (!isEnabled() || _pSts != nullptr || _pCmd != nullptr) return;  // already created
 
     NimBLEService* svc = server->createService(_svcUuid.c_str());
+    // Security: both characteristics require an encrypted link (P0a).
+    // Without these flags any BLE central in range could read the config
+    // (credentials!) or issue commands — see ffp firmware threat model.
+    // NimBLE auto-starts pairing when an unencrypted peer touches them;
+    // the peer must pair (passkey) before read/write/notify succeed.
     if (!_cmdUuid.empty()) {
-        _pCmd = svc->createCharacteristic(_cmdUuid.c_str(),
-                                          NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+        _pCmd = svc->createCharacteristic(
+            _cmdUuid.c_str(),
+            NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR | NIMBLE_PROPERTY::WRITE_ENC);
     }
     if (!_stsUuid.empty()) {
-        _pSts = svc->createCharacteristic(_stsUuid.c_str(),
-                                          NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+        _pSts = svc->createCharacteristic(
+            _stsUuid.c_str(),
+            NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::READ_ENC);
     }
     if (_pCmd != nullptr) {
         _pCb = new CustomServiceCallbacks(this);  // owned forever, freed only by kill()
